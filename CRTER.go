@@ -9,6 +9,18 @@ import (
 	"regexp"
 )
 
+const banner = `
+
+  _____ _____ _______ ______ _____  
+ / ____|  __ \__   __|  ____|  __ \ 
+| |    | |__) | | |  | |__  | |__) |
+| |    |  _  /  | |  |  __| |  _  / 
+| |____| | \ \  | |  | |____| | \ \ 
+ \_____|_|  \_\ |_|  |______|_|  \_\
+                                    
+
+`
+
 func fetchCrtShDomains(domain string) ([]string, error) {
 	url := fmt.Sprintf("https://crt.sh/?q=%%25.%s", domain)
 	resp, err := http.Get(url)
@@ -34,6 +46,8 @@ func fetchCrtShDomains(domain string) ([]string, error) {
 }
 
 func main() {
+	fmt.Println(banner)
+
 	if len(os.Args) != 3 {
 		fmt.Printf("Usage: %s <domainlist> <output>\n", os.Args[0])
 		os.Exit(1)
@@ -67,10 +81,12 @@ func main() {
 			continue
 		}
 
+		fmt.Printf("Domains for %s:\n", domain)
 		for _, d := range domains {
 			fmt.Println(d)
 			writer.WriteString(d + "\n")
 		}
+		fmt.Println()
 	}
 
 	if err := scanner.Err(); err != nil {
