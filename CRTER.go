@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
+	"sync"
 )
 
 const banner = `
@@ -18,20 +20,31 @@ const banner = `
 | |____| | \ \  | |  | |____| | \ \ 
  \_____|_|  \_\ |_|  |______|_|  \_\
                                     
+				By Micro0x00
 
 `
 
-func fetchCrtShDomains(domain string) ([]string, error) {
-	url := fmt.Sprintf("https://crt.sh/?q=%%25.%s", domain)
+func fetchCrtShDomains(domain string, wg *sync.WaitGroup, ch chan<- []string, errCh chan<- error) {
+	defer wg.Done()
+
+	var url string
+	if strings.Contains(domain, ".") {
+		url = fmt.Sprintf("https://crt.sh/?q=%%25.%s", domain)
+	} else {
+		url = fmt.Sprintf("https://crt.sh/?q=%%25.%s%%25", domain)
+	}
+
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, err
+		errCh <- err
+		return
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		errCh <- err
+		return
 	}
 
 	re := regexp.MustCompile(`<TD>\*\.([^<]+)</TD>`)
@@ -42,7 +55,7 @@ func fetchCrtShDomains(domain string) ([]string, error) {
 		domains = append(domains, match[1])
 	}
 
-	return domains, nil
+	ch <- domains
 }
 
 func main() {
@@ -73,25 +86,36 @@ func main() {
 	writer := bufio.NewWriter(outFile)
 
 	scanner := bufio.NewScanner(file)
+	var wg sync.WaitGroup
+	ch := make(chan []string)
+	errCh := make(chan error)
+
 	for scanner.Scan() {
 		domain := scanner.Text()
-		domains, err := fetchCrtShDomains(domain)
-		if err != nil {
-			fmt.Printf("Error fetching domains for %s: %v\n", domain, err)
-			continue
-		}
+		wg.Add(1)
+		go fetchCrtShDomains(domain, &wg, ch, errCh)
+	}
 
-		fmt.Printf("Domains for %s:\n", domain)
+	go func() {
+		wg.Wait()
+		close(ch)
+		close(errCh)
+	}()
+
+	for domains := range ch {
 		for _, d := range domains {
 			fmt.Println(d)
 			writer.WriteString(d + "\n")
 		}
-		fmt.Println()
 	}
 
 	if err := scanner.Err(); err != nil {
 		fmt.Printf("Error reading domainlist: %v\n", err)
 		os.Exit(1)
+	}
+
+	for err := range errCh {
+		fmt.Printf("Error fetching domains: %v\n", err)
 	}
 
 	writer.Flush()
